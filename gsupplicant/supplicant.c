@@ -2132,7 +2132,7 @@ int g_supplicant_set_country(const char *alpha2,
 }
 
 struct interface_data {
-	GSupplicantInterface *interface;
+	char *path;
 	GSupplicantInterfaceCallback callback;
 	void *user_data;
 };
@@ -2152,6 +2152,12 @@ struct interface_connect_data {
 	GSupplicantSSID *ssid;
 	void *user_data;
 };
+
+static void interface_data_free(struct interface_data *data)
+{
+	g_free(data->path);
+	dbus_free(data);
+}
 
 static void interface_create_property(const char *key, DBusMessageIter *iter,
 							void *user_data)
@@ -2365,7 +2371,7 @@ done:
 	if (data->callback != NULL)
 		data->callback(err, NULL, data->user_data);
 
-	dbus_free(data);
+	interface_data_free(data);
 }
 
 
@@ -2374,7 +2380,7 @@ static void interface_remove_params(DBusMessageIter *iter, void *user_data)
 	struct interface_data *data = user_data;
 
 	dbus_message_iter_append_basic(iter, DBUS_TYPE_OBJECT_PATH,
-							&data->interface->path);
+							&data->path);
 }
 
 
@@ -2394,7 +2400,7 @@ int g_supplicant_interface_remove(GSupplicantInterface *interface,
 	if (data == NULL)
 		return -ENOMEM;
 
-	data->interface = interface;
+	data->path = g_strdup(interface->path);
 	data->callback = callback;
 	data->user_data = user_data;
 
@@ -2409,16 +2415,21 @@ static void interface_scan_result(const char *error,
 				DBusMessageIter *iter, void *user_data)
 {
 	struct interface_data *data = user_data;
+	GSupplicantInterface *interface;
+
+	interface = g_hash_table_lookup(interface_table, data->path);
+	if (interface == NULL)
+		return;
 
 	if (error != NULL) {
 		if (data->callback != NULL)
-			data->callback(-EIO, data->interface, data->user_data);
+			data->callback(-EIO, interface, data->user_data);
 	} else {
-		data->interface->scan_callback = data->callback;
-		data->interface->scan_data = data->user_data;
+		interface->scan_callback = data->callback;
+		interface->scan_data = data->user_data;
 	}
 
-	dbus_free(data);
+	interface_data_free(data);
 }
 
 static void interface_scan_params(DBusMessageIter *iter, void *user_data)
@@ -2468,7 +2479,7 @@ int g_supplicant_interface_scan(GSupplicantInterface *interface,
 	if (data == NULL)
 		return -ENOMEM;
 
-	data->interface = interface;
+	data->path = g_strdup(interface->path);
 	data->callback = callback;
 	data->user_data = user_data;
 
@@ -3070,23 +3081,35 @@ static void network_remove_result(const char *error,
 				DBusMessageIter *iter, void *user_data)
 {
 	struct interface_data *data = user_data;
+	GSupplicantInterface *interface;
 	int result = 0;
 
 	SUPPLICANT_DBG("");
+
+	interface = g_hash_table_lookup(interface_table, data->path);
+	if (interface == NULL)
+		return;
 
 	if (error != NULL)
 		result = -EIO;
 
 	if (data->callback != NULL)
-		data->callback(result, data->interface, data->user_data);
+		data->callback(result, interface, data->user_data);
 
-	dbus_free(data);
+	interface_data_free(data);
 }
 
 static void network_remove_params(DBusMessageIter *iter, void *user_data)
 {
 	struct interface_data *data = user_data;
-	const char *path = data->interface->network_path;
+	GSupplicantInterface *interface;
+	const char *path;
+
+	interface = g_hash_table_lookup(interface_table, data->path);
+	if (interface == NULL)
+		return;
+
+	path = interface->network_path;
 
 	SUPPLICANT_DBG("path %s", path);
 
@@ -3095,7 +3118,11 @@ static void network_remove_params(DBusMessageIter *iter, void *user_data)
 
 static int network_remove(struct interface_data *data)
 {
-	GSupplicantInterface *interface = data->interface;
+	GSupplicantInterface *interface;
+
+	interface = g_hash_table_lookup(interface_table, data->path);
+	if (interface == NULL)
+		return -ENODEV;
 
 	SUPPLICANT_DBG("");
 
@@ -3108,16 +3135,21 @@ static void interface_disconnect_result(const char *error,
 				DBusMessageIter *iter, void *user_data)
 {
 	struct interface_data *data = user_data;
+	GSupplicantInterface *interface;
 
 	SUPPLICANT_DBG("");
 
+	interface = g_hash_table_lookup(interface_table, data->path);
+	if (interface == NULL)
+		return;
+
 	if (error != NULL && data->callback != NULL)
-		data->callback(-EIO, data->interface, data->user_data);
+		data->callback(-EIO, interface, data->user_data);
 
 	/* If we are disconnecting from previous WPS successful
 	 * association. i.e.: it did not went through AddNetwork,
 	 * and interface->network_path was never set. */
-	if (data->interface->network_path == NULL)
+	if (interface->network_path == NULL)
 		return;
 
 	network_remove(data);
@@ -3141,7 +3173,7 @@ int g_supplicant_interface_disconnect(GSupplicantInterface *interface,
 	if (data == NULL)
 		return -ENOMEM;
 
-	data->interface = interface;
+	data->path = g_strdup(interface->path);
 	data->callback = callback;
 	data->user_data = user_data;
 

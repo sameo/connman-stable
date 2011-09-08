@@ -572,6 +572,10 @@ void __connman_ipconfig_newlink(int index, unsigned short type,
 
 	ipdevice->index = index;
 	ipdevice->ifname = connman_inet_ifname(index);
+	if (ipdevice->ifname == NULL) {
+		g_free(ipdevice);
+		return;
+	}
 	ipdevice->type = type;
 
 	ipdevice->ipv6_enabled = get_ipv6_state(ipdevice->ifname);

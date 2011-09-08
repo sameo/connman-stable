@@ -488,7 +488,13 @@ static int network_connect(struct connman_network *network)
 static void disconnect_callback(int result, GSupplicantInterface *interface,
 								void *user_data)
 {
-	struct wifi_data *wifi = user_data;
+	struct wifi_data *wifi;
+
+	DBG("");
+
+	wifi = g_supplicant_interface_get_data(interface);
+	if (wifi == NULL)
+		return;
 
 	if (wifi->network != NULL) {
 		/*
@@ -533,7 +539,7 @@ static int network_disconnect(struct connman_network *network)
 	wifi->disconnecting = TRUE;
 
 	err = g_supplicant_interface_disconnect(wifi->interface,
-						disconnect_callback, wifi);
+						disconnect_callback, NULL);
 	if (err < 0)
 		wifi->disconnecting = FALSE;
 

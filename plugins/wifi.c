@@ -184,6 +184,11 @@ static void wifi_remove(struct connman_device *device)
 
 	remove_networks(device, wifi);
 
+	if (wifi->network != NULL) {
+		connman_network_set_connected(wifi->network, FALSE);
+		wifi->network = NULL;
+	}
+
 	connman_device_set_data(device, NULL);
 	connman_device_unref(wifi->device);
 	connman_rtnl_remove_watch(wifi->watch);
